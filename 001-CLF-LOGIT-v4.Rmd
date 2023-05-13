@@ -127,7 +127,7 @@ mod_logit <- list()
 
 
 ```{r}
-for (i in 1:dim(filterer)[1]){
+for (i in 158:dim(filterer)[1]){
   print(i)
   mod_df <- df %>%
     mutate(y = ifelse(laborforce=="In the laborforce",1,0)) %>%
@@ -187,7 +187,7 @@ for (i in 1:dim(filterer)[1]){
                         design = mod_design)
   }
   if (!all(filterer[i,] == "All")){
-    mod_logit[[i]]  <- svyglm(paste("y~",paste("year+month+",variables,collapse = "+"),"+1"),
+    mod_logit[[i]]  <- svyglm(paste("y~year+month+",paste(variables,collapse = "+"),"+1"),
                         family = quasibinomial,
                         design = mod_design,
                         x=F,
@@ -236,4 +236,28 @@ for (i in 1:dim(filterer)[1]){
 
   mod_logit[[i]] <- NA
 }
+```
+
+# FULL MODEL with interactions!!
+
+```{r}
+
+mod_df <- df %>%
+    mutate(y = ifelse(laborforce=="In the laborforce",1,0)) %>%
+    filter(civilian == "civilian", age16up == 1) %>%
+    select(y, id, contains("pwsswgt"), year, month, state, sex, race, hisp, married, educ, disability, hearing, seeing, remembering, mobility, selfcare, erranddifficulty, age1664, age25up)
+
+mod_design <- svydesign(id=~id, weights=~pwsswgt, data=mod_df)
+variables <- names(filterer)
+  
+mod_logit_interact  <- svyglm(paste("y~year+month+",
+                                    paste(variables,collapse = "+"),
+                                    "+(",paste(variables[c(1:3,6)],collapse="+"),")^2-1"),
+                          family = quasibinomial,
+                          design = mod_design,
+                          x=F,
+                          y=F)
+
+#cloud_prep()
+#get_object("2023_1536lf_actuals.rds", "demographics_project_storage") %>% readRSD() 
 ```
