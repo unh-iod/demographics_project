@@ -1,0 +1,239 @@
+---
+title: "CLF"
+author: "Nate Thomas"
+date: "2023-03-28"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+memory.limit()
+memory.size()
+
+library(butcher)
+library(R.utils)
+library(utils)
+library(dplyr)
+library(plyr)
+library(survey)
+library(mltools)
+library(data.table)
+library(svMisc)
+year = 2023
+
+source("gcs_interface.R")
+```
+
+```{r}
+cloud_prep()
+get_object("Profile 15 --- regression_dataset (2009-2022).csv", "demographics_project_raw") 
+df <- read.csv("_downloaded_.csv")
+unlink("_downloaded_.csv")
+```
+
+# Set reference groupgs:
+
+```{r}
+df <- df %>%
+  mutate(year = as.factor(year),
+         month = as.factor(month),
+         state = as.factor(state),
+         sex = as.factor(sex),
+         race = as.factor(race),
+         hisp = as.factor(hisp),
+         married = as.factor(married),
+         educ = as.factor(educ),
+         disability = as.factor(disability),
+         hearing = as.factor(hearing),
+         seeing = as.factor(seeing),
+         remembering = as.factor(remembering),
+         mobility = as.factor(mobility),
+         selfcare = as.factor(selfcare),
+         erranddifficulty = as.factor(erranddifficulty))
+
+df <- df %>% within(state <- relevel(state, ref = "NH"))
+df <- df %>% within(sex <- relevel(sex, ref = "Men"))
+df <- df %>% within(race <- relevel(race, ref = "White"))
+df <- df %>% within(hisp <- relevel(hisp, ref = "Non-Hispanic nor Latino ethnicity"))
+df <- df %>% within(married <- relevel(married, ref = "Married"))
+df <- df %>% within(educ <- relevel(educ, ref = "High school graduates, no college"))
+df <- df %>% within(disability <- relevel(disability, ref = "No Disability"))
+
+df <- df %>% within(hearing <- relevel(hearing, ref = "no hearing disabilty"))
+df <- df %>% within(seeing <- relevel(seeing, ref = "no seeing disability"))
+df <- df %>% within(remembering <- relevel(remembering, ref = "no remembering disability"))
+df <- df %>% within(mobility <- relevel(mobility, ref = "no mobility disability"))
+df <- df %>% within(selfcare <- relevel(selfcare, ref = "no selfcare disability"))
+df <- df %>% within(erranddifficulty <- relevel(erranddifficulty, ref = "no errand difficulty disability"))
+
+df$id <- 1:nrow(df)
+```
+
+# Possible selection combinations
+
+```{r}
+filterer <- data.frame(state = c("All","Any"),
+           sex = c("All","Any"),
+           race= c("All","Any"),
+           hisp= c("All","Any"),
+           married= c("All","Any"),
+           educ= c("All","Any"),
+           disability= c("All","Any"),
+           hearing= c("All","Any"),
+           seeing= c("All","Any"),
+           remembering= c("All","Any"),
+           mobility= c("All","Any"),
+           selfcare= c("All","Any"),
+           erranddifficulty= c("All","Any"),
+           age1664 = c("All","Any"),
+           age25up =  c("All","Any")) %>%
+  tidyr::expand(state,sex,race,hisp,married,educ,disability,
+                hearing,seeing,remembering,mobility,selfcare,
+                erranddifficulty,age1664,age25up)
+
+filterer <- filterer %>%
+  filter(!(disability == "Any" & hearing == "Any") & 
+         !(disability == "Any" & seeing == "Any") &
+         !(disability == "Any" & remembering == "Any") &
+         !(disability == "Any" & mobility == "Any") &
+         !(disability == "Any" & selfcare == "Any") &
+         !(disability == "Any" & erranddifficulty == "Any") &
+         !(hearing == "Any" & seeing == "Any") &
+         !(hearing == "Any" & remembering == "Any") &
+         !(hearing == "Any" & mobility == "Any") &
+         !(hearing == "Any" & selfcare == "Any") &
+         !(hearing == "Any" & erranddifficulty == "Any") &
+           
+         !(seeing == "Any" & remembering == "Any") &
+         !(seeing == "Any" & mobility == "Any") &
+         !(seeing == "Any" & selfcare == "Any") &
+         !(seeing == "Any" & erranddifficulty == "Any") &
+           
+         !(remembering == "Any" & mobility == "Any") &
+         !(remembering == "Any" & selfcare == "Any") &
+         !(remembering == "Any" & erranddifficulty == "Any") &
+           
+         !(mobility == "Any" & selfcare == "Any") &
+         !(mobility == "Any" & erranddifficulty == "Any") &
+           
+         !(selfcare == "Any" & erranddifficulty == "Any") &
+           
+         !(age1664 == "Any" & age25up == "Any"))
+```
+
+
+```{r}
+mod_logit <- list()
+```
+
+
+```{r}
+for (i in 1:dim(filterer)[1]){
+  print(i)
+  mod_df <- df %>%
+    mutate(y = ifelse(laborforce=="In the laborforce",1,0)) %>%
+    filter(civilian == "civilian", age16up == 1) %>%
+    select(y, id, contains("pwsswgt"), year, month, state, sex, race, hisp, married, educ, disability, hearing, seeing, remembering, mobility, selfcare, erranddifficulty, age1664, age25up)
+  
+  if (filterer[i,"state"] == "All") {
+    mod_df <- mod_df %>% select(-state)
+  }
+  if (filterer[i,"sex"] == "All") {
+    mod_df <- mod_df %>% select(-sex)
+  }
+  if (filterer[i,"race"] == "All") {
+    mod_df <- mod_df %>% select(-race)
+  }
+  if (filterer[i,"hisp"] == "All") {
+    mod_df <- mod_df %>% select(-hisp)
+  }
+  if (filterer[i,"married"] == "All") {
+    mod_df <- mod_df %>% select(-married)
+  }
+  if (filterer[i,"educ"] == "All") {
+    mod_df <- mod_df %>% select(-educ)
+  }
+  if (filterer[i,"disability"] == "All") {
+    mod_df <- mod_df %>% select(-disability)
+  }
+  if (filterer[i,"hearing"] == "All") {
+    mod_df <- mod_df %>% select(-hearing)
+  }
+  if (filterer[i,"seeing"] == "All") {
+    mod_df <- mod_df %>% select(-seeing)
+  }
+  if (filterer[i,"mobility"] == "All") {
+    mod_df <- mod_df %>% select(-mobility)
+  }
+  if (filterer[i,"selfcare"] == "All") {
+    mod_df <- mod_df %>% select(-selfcare)
+  }
+  if (filterer[i,"erranddifficulty"] == "All") {
+    mod_df <- mod_df %>% select(-erranddifficulty)
+  }
+  if (filterer[i,"remembering"] == "All") {
+    mod_df <- mod_df %>% select(-remembering)
+  }
+  if (filterer[i,"age1664"] == "All") {
+    mod_df <- mod_df %>% select(-age1664)
+  }
+  if (filterer[i,"age25up"] == "All") {
+    mod_df <- mod_df %>% select(-age25up)
+  }
+  mod_design <- svydesign(id=~id, weights=~pwsswgt, data=mod_df)
+  variables <- names(filterer[which(filterer[i,] == "Any")])
+  if (all(filterer[i,] == "All")){
+    mod_logit[[i]]  <- svyglm(y~year+month+1,
+                        family = quasibinomial,
+                        design = mod_design)
+  }
+  if (!all(filterer[i,] == "All")){
+    mod_logit[[i]]  <- svyglm(paste("y~",paste("year+month+",variables,collapse = "+"),"+1"),
+                        family = quasibinomial,
+                        design = mod_design,
+                        x=F,
+                        y=F)
+  }
+  
+  mod_logit[[i]]$residuals <- NA
+  mod_logit[[i]]$fitted.values <- NA
+  mod_logit[[i]]$effects <- NA
+  mod_logit[[i]]$qr <- NA
+  mod_logit[[i]]$linear.predictors <- NA
+  mod_logit[[i]]$weights <- NA
+  mod_logit[[i]]$prior.weights <- NA
+  mod_logit[[i]]$y <- NA
+  mod_logit[[i]]$model <- NA
+  mod_logit[[i]]$data <- NA
+  mod_logit[[i]]$survey.design <- NA
+
+  mod_logit[[i]]$family$linkfun <- NA
+  mod_logit[[i]]$family$dev.resid <- NA
+  mod_logit[[i]]$family$variance <- NA
+  mod_logit[[i]]$family$dev.resids <- NA
+  mod_logit[[i]]$family$aic <- NA
+  mod_logit[[i]]$family$validmu <- NA
+  mod_logit[[i]]$family$valideta <- NA
+
+  mod_logit[[i]]$R <- NA
+  mod_logit[[i]]$family$initialize <- NA
+  mod_logit[[i]]$deviance <- NA
+  mod_logit[[i]]$null.deviance <- NA
+  mod_logit[[i]]$iter <- NA
+  mod_logit[[i]]$df.residual <- NA
+  mod_logit[[i]]$df.null <- NA
+  mod_logit[[i]]$call <- NA
+  
+  attr(mod_logit[[i]]$terms, ".Environment") <- NULL
+
+  saveRDS(mod_logit[[i]], paste(year,"_",i,"lf_models.rds",sep=""))
+  
+  cloud_prep()
+  send_object(paste(year,"_",i,"lf_models.rds",sep=""),
+              "demographics_project_storage",
+              name=paste(year,"_",i,"lf_models.rds",sep=""))
+  
+  unlink(paste(year,"_",i,"lf_models.rds",sep=""))
+
+  mod_logit[[i]] <- NA
+}
+```
