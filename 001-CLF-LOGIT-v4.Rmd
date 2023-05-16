@@ -280,6 +280,39 @@ mod_logit_interact  <- svyglm(paste("y~year+month+",
                           x=F,
                           y=F)
 mod_logit_summary <- mod_logit_interact %>% summary()
+mod_logit_summary$deviance.resid <- NA
+
+mod_logit_interact$residuals <- NA
+mod_logit_interact$fitted.values <- NA
+mod_logit_interact$effects <- NA
+mod_logit_interact$qr <- NA
+mod_logit_interact$linear.predictors <- NA
+mod_logit_interact$weights <- NA
+mod_logit_interact$prior.weights <- NA
+mod_logit_interact$y <- NA
+mod_logit_interact$model <- NA
+mod_logit_interact$data <- NA
+mod_logit_interact$survey.design <- NA
+
+mod_logit_interact$family$linkfun <- NA
+mod_logit_interact$family$dev.resid <- NA
+mod_logit_interact$family$variance <- NA
+mod_logit_interact$family$dev.resids <- NA
+mod_logit_interact$family$aic <- NA
+mod_logit_interact$family$validmu <- NA
+mod_logit_interact$family$valideta <- NA
+
+mod_logit_interact$R <- NA
+mod_logit_interact$family$initialize <- NA
+mod_logit_interact$deviance <- NA
+mod_logit_interact$null.deviance <- NA
+mod_logit_interact$iter <- NA
+mod_logit_interact$df.residual <- NA
+mod_logit_interact$df.null <- NA
+mod_logit_interact$call <- NA
+
+attr(mod_logit_interact$terms, ".Environment") <- NULL
+
 
   saveRDS(mod_logit_interact, paste(year,"_lf_model.rds",sep=""))
 
