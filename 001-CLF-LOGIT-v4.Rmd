@@ -19,21 +19,30 @@ library(mltools)
 library(data.table)
 library(svMisc)
 year = 2023
+library(usethis)
 
 source("gcs_interface.R")
+
+
 ```
 
 ```{r}
-cloud_prep()
-get_object("Profile 15 --- regression_dataset (2009-2022).csv", "demographics_project_raw") 
-df <- read.csv("_downloaded_.csv")
-unlink("_downloaded_.csv")
+if(!exists("df1")){
+  cloud_prep()
+  get_object("Profile 15 --- regression_dataset (2009-2022).csv", "demographics_project_raw") 
+  df1 <- read.csv("_downloaded_.csv")
+  unlink("_downloaded_.csv")
+  save.image(".RData")
+}
+if(exists("df1")){
+  load(".RData")
+}
 ```
 
 # Set reference groupgs:
 
 ```{r}
-df <- df %>%
+df1 <- df1 %>%
   mutate(year = as.factor(year),
          month = as.factor(month),
          state = as.factor(state),
@@ -50,22 +59,22 @@ df <- df %>%
          selfcare = as.factor(selfcare),
          erranddifficulty = as.factor(erranddifficulty))
 
-df <- df %>% within(state <- relevel(state, ref = "NH"))
-df <- df %>% within(sex <- relevel(sex, ref = "Men"))
-df <- df %>% within(race <- relevel(race, ref = "White"))
-df <- df %>% within(hisp <- relevel(hisp, ref = "Non-Hispanic nor Latino ethnicity"))
-df <- df %>% within(married <- relevel(married, ref = "Married"))
-df <- df %>% within(educ <- relevel(educ, ref = "High school graduates, no college"))
-df <- df %>% within(disability <- relevel(disability, ref = "No Disability"))
+df1 <- df1 %>% within(state <- relevel(state, ref = "NH"))
+df1 <- df1 %>% within(sex <- relevel(sex, ref = "Men"))
+df1 <- df1 %>% within(race <- relevel(race, ref = "White"))
+df1 <- df1 %>% within(hisp <- relevel(hisp, ref = "Non-Hispanic nor Latino ethnicity"))
+df1 <- df1 %>% within(married <- relevel(married, ref = "Married"))
+df1 <- df1 %>% within(educ <- relevel(educ, ref = "High school graduates, no college"))
+df1 <- df1 %>% within(disability <- relevel(disability, ref = "No Disability"))
 
-df <- df %>% within(hearing <- relevel(hearing, ref = "no hearing disabilty"))
-df <- df %>% within(seeing <- relevel(seeing, ref = "no seeing disability"))
-df <- df %>% within(remembering <- relevel(remembering, ref = "no remembering disability"))
-df <- df %>% within(mobility <- relevel(mobility, ref = "no mobility disability"))
-df <- df %>% within(selfcare <- relevel(selfcare, ref = "no selfcare disability"))
-df <- df %>% within(erranddifficulty <- relevel(erranddifficulty, ref = "no errand difficulty disability"))
+df1 <- df1 %>% within(hearing <- relevel(hearing, ref = "no hearing disabilty"))
+df1 <- df1 %>% within(seeing <- relevel(seeing, ref = "no seeing disability"))
+df1 <- df1 %>% within(remembering <- relevel(remembering, ref = "no remembering disability"))
+df1 <- df1 %>% within(mobility <- relevel(mobility, ref = "no mobility disability"))
+df1 <- df1 %>% within(selfcare <- relevel(selfcare, ref = "no selfcare disability"))
+df1 <- df1 %>% within(erranddifficulty <- relevel(erranddifficulty, ref = "no errand difficulty disability"))
 
-df$id <- 1:nrow(df)
+df1$id <- 1:nrow(df1)
 ```
 
 # Possible selection combinations
@@ -127,64 +136,67 @@ mod_logit <- list()
 
 
 ```{r}
-for (i in 158:dim(filterer)[1]){
+i=1
+for (i in 1:dim(filterer)[1]){
   print(i)
-  mod_df <- df %>%
+  mod_df1 <- df1 %>%
     mutate(y = ifelse(laborforce=="In the laborforce",1,0)) %>%
     filter(civilian == "civilian", age16up == 1) %>%
     select(y, id, contains("pwsswgt"), year, month, state, sex, race, hisp, married, educ, disability, hearing, seeing, remembering, mobility, selfcare, erranddifficulty, age1664, age25up)
   
   if (filterer[i,"state"] == "All") {
-    mod_df <- mod_df %>% select(-state)
+    mod_df1 <- mod_df1 %>% select(-state)
   }
   if (filterer[i,"sex"] == "All") {
-    mod_df <- mod_df %>% select(-sex)
+    mod_df1 <- mod_df1 %>% select(-sex)
   }
   if (filterer[i,"race"] == "All") {
-    mod_df <- mod_df %>% select(-race)
+    mod_df1 <- mod_df1 %>% select(-race)
   }
   if (filterer[i,"hisp"] == "All") {
-    mod_df <- mod_df %>% select(-hisp)
+    mod_df1 <- mod_df1 %>% select(-hisp)
   }
   if (filterer[i,"married"] == "All") {
-    mod_df <- mod_df %>% select(-married)
+    mod_df1 <- mod_df1 %>% select(-married)
   }
   if (filterer[i,"educ"] == "All") {
-    mod_df <- mod_df %>% select(-educ)
+    mod_df1 <- mod_df1 %>% select(-educ)
   }
   if (filterer[i,"disability"] == "All") {
-    mod_df <- mod_df %>% select(-disability)
+    mod_df1 <- mod_df1 %>% select(-disability)
   }
   if (filterer[i,"hearing"] == "All") {
-    mod_df <- mod_df %>% select(-hearing)
+    mod_df1 <- mod_df1 %>% select(-hearing)
   }
   if (filterer[i,"seeing"] == "All") {
-    mod_df <- mod_df %>% select(-seeing)
+    mod_df1 <- mod_df1 %>% select(-seeing)
   }
   if (filterer[i,"mobility"] == "All") {
-    mod_df <- mod_df %>% select(-mobility)
+    mod_df1 <- mod_df1 %>% select(-mobility)
   }
   if (filterer[i,"selfcare"] == "All") {
-    mod_df <- mod_df %>% select(-selfcare)
+    mod_df1 <- mod_df1 %>% select(-selfcare)
   }
   if (filterer[i,"erranddifficulty"] == "All") {
-    mod_df <- mod_df %>% select(-erranddifficulty)
+    mod_df1 <- mod_df1 %>% select(-erranddifficulty)
   }
   if (filterer[i,"remembering"] == "All") {
-    mod_df <- mod_df %>% select(-remembering)
+    mod_df1 <- mod_df1 %>% select(-remembering)
   }
   if (filterer[i,"age1664"] == "All") {
-    mod_df <- mod_df %>% select(-age1664)
+    mod_df1 <- mod_df1 %>% select(-age1664)
   }
   if (filterer[i,"age25up"] == "All") {
-    mod_df <- mod_df %>% select(-age25up)
+    mod_df1 <- mod_df1 %>% select(-age25up)
   }
-  mod_design <- svydesign(id=~id, weights=~pwsswgt, data=mod_df)
+  mod_design <- svydesign(id=~id, weights=~pwsswgt, data=mod_df1)
   variables <- names(filterer[which(filterer[i,] == "Any")])
   if (all(filterer[i,] == "All")){
     mod_logit[[i]]  <- svyglm(y~year+month+1,
                         family = quasibinomial,
                         design = mod_design)
+    mod_temp_summary <- mod_logit[[i]] %>% summary()
+    mod_temp_summary$deviance.resid <- NA
   }
   if (!all(filterer[i,] == "All")){
     mod_logit[[i]]  <- svyglm(paste("y~year+month+",paste(variables,collapse = "+"),"+1"),
@@ -192,6 +204,8 @@ for (i in 158:dim(filterer)[1]){
                         design = mod_design,
                         x=F,
                         y=F)
+    mod_temp_summary <- mod_logit[[i]] %>% summary()
+    mod_temp_summary$deviance.resid <- NA
   }
   
   mod_logit[[i]]$residuals <- NA
@@ -222,32 +236,40 @@ for (i in 158:dim(filterer)[1]){
   mod_logit[[i]]$df.residual <- NA
   mod_logit[[i]]$df.null <- NA
   mod_logit[[i]]$call <- NA
-  
+
   attr(mod_logit[[i]]$terms, ".Environment") <- NULL
 
   saveRDS(mod_logit[[i]], paste(year,"_",i,"lf_models.rds",sep=""))
-  
+  saveRDS(mod_temp_summary, paste(year,"_",i,"lf_models_summary.rds",sep=""))
+
   cloud_prep()
   send_object(paste(year,"_",i,"lf_models.rds",sep=""),
               "demographics_project_storage",
               name=paste(year,"_",i,"lf_models.rds",sep=""))
-  
-  unlink(paste(year,"_",i,"lf_models.rds",sep=""))
+  send_object(paste(year,"_",i,"lf_models_summary.rds",sep=""),
+              "demographics_project_storage",
+              name=paste(year,"_",i,"lf_models_summary.rds",sep=""))
 
+  unlink(paste(year,"_",i,"lf_models.rds",sep=""))
+  unlink(paste(year,"_",i,"lf_models_summary.rds",sep=""))
+  
   mod_logit[[i]] <- NA
+  
+  
 }
 ```
+
 
 # FULL MODEL with interactions!!
 
 ```{r}
 
-mod_df <- df %>%
+mod_df1 <- df1 %>%
     mutate(y = ifelse(laborforce=="In the laborforce",1,0)) %>%
     filter(civilian == "civilian", age16up == 1) %>%
     select(y, id, contains("pwsswgt"), year, month, state, sex, race, hisp, married, educ, disability, hearing, seeing, remembering, mobility, selfcare, erranddifficulty, age1664, age25up)
 
-mod_design <- svydesign(id=~id, weights=~pwsswgt, data=mod_df)
+mod_design <- svydesign(id=~id, weights=~pwsswgt, data=mod_df1)
 variables <- names(filterer)
   
 mod_logit_interact  <- svyglm(paste("y~year+month+",
@@ -257,7 +279,14 @@ mod_logit_interact  <- svyglm(paste("y~year+month+",
                           design = mod_design,
                           x=F,
                           y=F)
+mod_logit_summary <- mod_logit_interact %>% summary()
 
-#cloud_prep()
-#get_object("2023_1536lf_actuals.rds", "demographics_project_storage") %>% readRSD() 
+  saveRDS(mod_logit_interact, paste(year,"_lf_model.rds",sep=""))
+
+  send_object(paste(year,"_lf_model.rds",sep=""),
+              "demographics_project_storage",
+              name=paste(year,"_lf_model.rds",sep=""))
+  
+  unlink(paste(year,"_",i,"lf_model.rds",sep=""))
+
 ```

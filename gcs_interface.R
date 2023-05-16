@@ -3,11 +3,11 @@ cloud_prep <- function(){
   getwd()
   if(Sys.getenv("DOMAINNAME") == "MSI"){
     Sys.setenv("GCS_DEFAULT_BUCKET" = "demographics-384020",
-               "GCS_AUTH_FILE" = paste(str_replace_all(getwd(),"/","\\\\"),"\\demographics-384020-821b645ce957.json",sep=""))
+               "GCS_AUTH_FILE" = paste(str_replace_all(getwd(),"/","\\\\"),"\\demographics-384020-18095ab60914.json",sep=""))
   }
   if(Sys.getenv("DOMAINNAME") != "MSI"){
     Sys.setenv("GCS_DEFAULT_BUCKET" = "demographics-384020",
-               "GCS_AUTH_FILE" = paste(getwd(),"/","/demographics-384020-821b645ce957.json",sep=""))
+               "GCS_AUTH_FILE" = paste(getwd(),"/","/demographics-384020-18095ab60914.json",sep=""))
   }
   library(googleCloudStorageR)
   buckets <- gcs_list_buckets("demographics-384020")
