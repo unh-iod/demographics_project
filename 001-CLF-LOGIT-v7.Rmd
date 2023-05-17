@@ -147,10 +147,8 @@ mod_df1 <- df1 %>%
   select(y, id, contains("pwsswgt"), year, month, state, 
          disability)
 
-mod_design <- svydesign(id=~id, weights=~pwsswgt, data=mod_df1)
-mod_logit  <- svyglm(y~state+disability+
+mod_logit  <- glm(y~year+month+state+disability+
                        disability*state+1,
-                     family = quasibinomial,
-                     design = mod_design,
-                     rescale = TRUE)
+                  data = mod_df1,
+                  family = "binomial")
 ```
