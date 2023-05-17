@@ -22,7 +22,7 @@ year = 2023
 library(usethis)
 
 source("gcs_interface.R")
-
+cloud_prep()
 
 ```
 
@@ -136,8 +136,8 @@ mod_logit <- list()
 
 
 ```{r}
-i=1
-for (i in 1:dim(filterer)[1]){
+i=1536
+for (i in 1536:dim(filterer)[1]){
   print(i)
   mod_df1 <- df1 %>%
     mutate(y = ifelse(laborforce=="In the laborforce",1,0)) %>%
@@ -252,74 +252,70 @@ for (i in 1:dim(filterer)[1]){
 
   unlink(paste(year,"_",i,"lf_models.rds",sep=""))
   unlink(paste(year,"_",i,"lf_models_summary.rds",sep=""))
-  
   mod_logit[[i]] <- NA
-  
-  
 }
 ```
 
-
-# FULL MODEL with interactions!!
-
 ```{r}
-
 mod_df1 <- df1 %>%
-    mutate(y = ifelse(laborforce=="In the laborforce",1,0)) %>%
-    filter(civilian == "civilian", age16up == 1) %>%
-    select(y, id, contains("pwsswgt"), year, month, state, sex, race, hisp, married, educ, disability, hearing, seeing, remembering, mobility, selfcare, erranddifficulty, age1664, age25up)
+  mutate(y = ifelse(laborforce=="In the laborforce",1,0)) %>%
+  filter(civilian == "civilian", age16up == 1) %>%
+  select(y, id, contains("pwsswgt"), year, month, state, 
+         sex, race, hisp, married, educ, disability)
 
-mod_design <- svydesign(id=~id, weights=~pwsswgt, data=mod_df1)
-variables <- names(filterer)
-  
-mod_logit_interact  <- svyglm(paste("y~year+month+",
-                                    paste(variables,collapse = "+"),
-                                    "+(",paste(variables[c(1:3,6)],collapse="+"),")^2-1"),
-                          family = quasibinomial,
-                          design = mod_design,
-                          x=F,
-                          y=F)
-mod_logit_summary <- mod_logit_interact %>% summary()
-mod_logit_summary$deviance.resid <- NA
+mod_design <- svydesign(id=~id, weights=~pwsswgt, data=mod_df1)    
+mod_logit  <- svyglm(paste("y~year+month+
+                                   sex+race+hisp+married+educ+disability+disability*state+1"),
+                        family = quasibinomial,
+                        design = mod_design,
+                        x=F,
+                        y=F)    
+mod_temp_summary <- mod_logit %>% summary()
 
-mod_logit_interact$residuals <- NA
-mod_logit_interact$fitted.values <- NA
-mod_logit_interact$effects <- NA
-mod_logit_interact$qr <- NA
-mod_logit_interact$linear.predictors <- NA
-mod_logit_interact$weights <- NA
-mod_logit_interact$prior.weights <- NA
-mod_logit_interact$y <- NA
-mod_logit_interact$model <- NA
-mod_logit_interact$data <- NA
-mod_logit_interact$survey.design <- NA
+# mod_logit$residuals <- NA
+# mod_logit$fitted.values <- NA
+# mod_logit$effects <- NA
+# mod_logit$qr <- NA
+# mod_logit$linear.predictors <- NA
+# mod_logit$weights <- NA
+# mod_logit$prior.weights <- NA
+# mod_logit$y <- NA
+# mod_logit$model <- NA
+# mod_logit$data <- NA
+# mod_logit$survey.design <- NA
+# mod_logit$family$linkfun <- NA
+# mod_logit$family$dev.resid <- NA
+# mod_logit$family$variance <- NA
+# mod_logit$family$dev.resids <- NA
+# mod_logit$family$aic <- NA
+# mod_logit$family$validmu <- NA
+# mod_logit$family$valideta <- NA
+# mod_logit$R <- NA
+# mod_logit$family$initialize <- NA
+# mod_logit$deviance <- NA
+# mod_logit$null.deviance <- NA
+# mod_logit$iter <- NA
+# mod_logit$df.residual <- NA
+# mod_logit$df.null <- NA
+# mod_logit$call <- NA
+# attr(mod_logit$terms, ".Environment") <- NULL
 
-mod_logit_interact$family$linkfun <- NA
-mod_logit_interact$family$dev.resid <- NA
-mod_logit_interact$family$variance <- NA
-mod_logit_interact$family$dev.resids <- NA
-mod_logit_interact$family$aic <- NA
-mod_logit_interact$family$validmu <- NA
-mod_logit_interact$family$valideta <- NA
+saveRDS(mod_logit, paste(year,"_",i,"lf_models.rds",sep=""))
+saveRDS(mod_temp_summary, paste(year,"_",i,"lf_models_summary.rds",sep=""))
 
-mod_logit_interact$R <- NA
-mod_logit_interact$family$initialize <- NA
-mod_logit_interact$deviance <- NA
-mod_logit_interact$null.deviance <- NA
-mod_logit_interact$iter <- NA
-mod_logit_interact$df.residual <- NA
-mod_logit_interact$df.null <- NA
-mod_logit_interact$call <- NA
-
-attr(mod_logit_interact$terms, ".Environment") <- NULL
-
-
-  saveRDS(mod_logit_interact, paste(year,"_lf_model.rds",sep=""))
-
-  send_object(paste(year,"_lf_model.rds",sep=""),
+cloud_prep()
+send_object(paste(year,"_lf_model.rds",sep=""),
+            "demographics_project_storage",
+            name=paste(year,"_",i,"lf_models.rds",sep=""))
+send_object(paste(year,"_lf_models_summary.rds",sep=""),
               "demographics_project_storage",
-              name=paste(year,"_lf_model.rds",sep=""))
-  
-  unlink(paste(year,"_",i,"lf_model.rds",sep=""))
+              name=paste(year,"_lf_models_summary.rds",sep=""))
 
+  unlink(paste(year,"_lf_models.rds",sep=""))
+  unlink(paste(year,"_lf_models_summary.rds",sep=""))  
+  
+mod_logit <- NA
 ```
+
+
+
