@@ -99,20 +99,12 @@ mod_filterer <- mod_filterer %>%
           mobility == "Any" |
           selfcare == "Any"|
           erranddifficulty == "Any") &
-         
-         married == "All" &
-         hisp == "All" &
-         educ == "All" &
-         age1664 == "All" &
-         age25up == "All" &
            
-         (state == "Any" & (disability == "Any" |
-                            hearing == "Any" |
-                            seeing == "Any" |
-                            remembering == "Any" |
-                            mobility == "Any" |
-                            selfcare == "Any"|
-                            erranddifficulty == "Any")) &
+          age1664 == "All" &
+          age25up == "All" &
+
+                      
+         (state == "Any" & (disability == "Any")) &
           
          !(disability == "Any" & hearing == "Any") & 
          !(disability == "Any" & seeing == "Any") &
@@ -141,124 +133,77 @@ mod_filterer <- mod_filterer %>%
          !(selfcare == "Any" & erranddifficulty == "Any") &
            
          !(age1664 == "Any" & age25up == "Any")) %>%
-  select(-educ,-hisp,-married, -age1664, -age25up) 
+  select(-age1664, -age25up) 
 mod_filterer  
 save.image(".RData")
 ```
 
 
 ```{r}
-state_onehot <- mod_df1 %>% select(state) %>% data.table() %>% one_hot()
-
-for (i in dim(mod_filterer)[1]:1){
+df_state_unique <- df1$state %>% unique()
+for (s in 1:length(df_state_unique)){
   print(i)
   mod_df1 <- df1 %>%
     mutate(y = ifelse(laborforce=="In the laborforce",1,0)) %>%
-    filter(civilian == "civilian", age16up == 1) %>%
-    select(y, id, contains("pwsswgt"), year, month, state, 
-           sex, race, disability, hearing, seeing, remembering,
-           mobility, selfcare, erranddifficulty)
-
-  if (mod_filterer[i,"state"] == "All") {
-    mod_df1 <- mod_df1 %>% select(-state)
-  }
-  if (mod_filterer[i,"sex"] == "All") {
-    mod_df1 <- mod_df1 %>% select(-sex)
-  }
-  if (mod_filterer[i,"race"] == "All") {
-    mod_df1 <- mod_df1 %>% select(-race)
-  }
-  if (mod_filterer[i,"disability"] == "All") {
-    mod_df1 <- mod_df1 %>% select(-disability)
-  }else{
-    disstate_onehot <- state_onehot*mod_df1$disability
-  }
-  if (mod_filterer[i,"hearing"] == "All") {
-    mod_df1 <- mod_df1 %>% select(-hearing)
-  }else{
-    disstate_onehot <- state_onehot*mod_df1$hearing  
-  }
-  if (mod_filterer[i,"seeing"] == "All") {
-    mod_df1 <- mod_df1 %>% select(-seeing)    
-  }else{
-    disstate_onehot <- state_onehot*mod_df1$seeing  
-  }
-  if (mod_filterer[i,"mobility"] == "All") {
-    mod_df1 <- mod_df1 %>% select(-mobility)
-  }else{
-    disstate_onehot <- state_onehot*mod_df1$mobility 
-  }
-  if (mod_filterer[i,"selfcare"] == "All") {
-    mod_df1 <- mod_df1 %>% select(-selfcare)
-  }else{
-    disstate_onehot <- state_onehot*mod_df1$selfcare
-  }
-  if (mod_filterer[i,"erranddifficulty"] == "All") {
-    mod_df1 <- mod_df1 %>% select(-erranddifficulty)
-  }else{
-    disstate_onehot <- state_onehot*mod_df1$erranddifficulty
-  }
-  if (mod_filterer[i,"remembering"] == "All") {
-    mod_df1 <- mod_df1 %>% select(-remembering)
-  }else{
-    disstate_onehot <- state_onehot*mod_df1$remembering 
-  }
-  colnames(disstate_onehot) <- paste(colnames(disstate_onehot),"dis",sep="_")
-  mod_df1 <- mod_df1 %>% cbind(disstate_onehot)
+    filter(civilian == "civilian", 
+           age16up == 1,
+           state == df_state_unique[s]) %>%
+    select(y, id, contains("pwsswgt"), year, month, 
+           sex, race, hisp, married, educ, disability)
 
   mod_design <- svydesign(id=~id, weights=~pwsswgt, data=mod_df1)
 
-  variables <- names(mod_df1)
-  mod_logit[[i]]  <- svyglm(paste("y~year+month+",paste(variables,collapse = "+"),"-1"),
+  variables <- names(mod_df1 %>% select(-y,-id, -year,-month,-contains("pwsswgt")))
+  
+  mod_logit  <- svyglm(paste("y~year+month+",paste(variables,collapse = "+"),"+1"),
                       family = quasibinomial,
-                      design = mod_design,
-                      x=F,
-                      y=F)
-  mod_temp_summary <- mod_logit[[i]] %>% summary()
+                      design = mod_design)
+  mod_temp_summary <- mod_logit %>% summary()
+                                
   mod_temp_summary$deviance.resid <- NA
 
-# mod_logit[[i]]$residuals <- NA
-# mod_logit[[i]]$fitted.values <- NA
-# mod_logit[[i]]$effects <- NA
-# mod_logit[[i]]$qr <- NA
-# mod_logit[[i]]$linear.predictors <- NA
-# mod_logit[[i]]$weights <- NA
-# mod_logit[[i]]$prior.weights <- NA
-# mod_logit[[i]]$y <- NA
-# mod_logit[[i]]$model <- NA
-# mod_logit[[i]]$data <- NA
-# mod_logit[[i]]$survey.design <- NA
-# mod_logit[[i]]$family$linkfun <- NA
-# mod_logit[[i]]$family$dev.resid <- NA
-# mod_logit[[i]]$family$variance <- NA
-# mod_logit[[i]]$family$dev.resids <- NA
-# mod_logit[[i]]$family$aic <- NA
-# mod_logit[[i]]$family$validmu <- NA
-# mod_logit[[i]]$family$valideta <- NA
-# mod_logit[[i]]$R <- NA
-# mod_logit[[i]]$family$initialize <- NA
-# mod_logit[[i]]$deviance <- NA
-# mod_logit[[i]]$null.deviance <- NA
-# mod_logit[[i]]$iter <- NA
-# mod_logit[[i]]$df.residual <- NA
-# mod_logit[[i]]$df.null <- NA
-# mod_logit[[i]]$call <- NA
-# attr(mod_logit[[i]]$terms, ".Environment") <- NULL
+# mod_logit$residuals <- NA
+# mod_logit$fitted.values <- NA
+# mod_logit$effects <- NA
+# mod_logit$qr <- NA
+# mod_logit$linear.predictors <- NA
+# mod_logit$weights <- NA
+# mod_logit$prior.weights <- NA
+# mod_logit$y <- NA
+# mod_logit$model <- NA
+# mod_logit$data <- NA
+# mod_logit$survey.design <- NA
+# mod_logit$family$linkfun <- NA
+# mod_logit$family$dev.resid <- NA
+# mod_logit$family$variance <- NA
+# mod_logit$family$dev.resids <- NA
+# mod_logit$family$aic <- NA
+# mod_logit$family$validmu <- NA
+# mod_logit$family$valideta <- NA
+# mod_logit$R <- NA
+# mod_logit$family$initialize <- NA
+# mod_logit$deviance <- NA
+# mod_logit$null.deviance <- NA
+# mod_logit$iter <- NA
+# mod_logit$df.residual <- NA
+# mod_logit$df.null <- NA
+# mod_logit$call <- NA
+# attr(mod_logit$terms, ".Environment") <- NULL
 # 
-# saveRDS(mod_logit[[i]], paste(year,"_",i,"lf_models.rds",sep=""))
+# saveRDS(mod_logit, paste(year,"_",i,"lf_models.rds",sep=""))
 # saveRDS(mod_temp_summary, paste(year,"_",i,"lf_models_summary.rds",sep=""))
 
 cloud_prep()
 #send_object(paste(year,"_lf_model.rds",sep=""),
-#            "demographics_project_storage",
+#            "demographics_project_models",
 #            name=paste(year,"_",i,"lf_models.rds",sep=""))
 #send_object(paste(year,"_",i,"lf_models_summary.rds",sep=""),
-#              "demographics_project_storage",
+#              "demographics_project_models",
 #              name=paste(year,"_",i,"lf_models_summary.rds",sep=""))
 
 #  unlink(paste(year,"_",i,"lf_models.rds",sep=""))
 #  unlink(paste(year,"_",i,"lf_models_summary.rds",sep=""))
-#  mod_logit[[i]] <- NA
+#  mod_logit <- NA
 }
 ```
 

@@ -8,7 +8,7 @@ cloud_prep <- function(){
   }
   library(googleCloudStorageR)
   buckets <- gcs_list_buckets("demographics-384020")
-  bucket <- buckets$name[2]
+  bucket <- "demographics_project_models"
   objects <- gcs_list_objects(bucket)
   return(list(bucket = bucket,objects = objects))
 }
