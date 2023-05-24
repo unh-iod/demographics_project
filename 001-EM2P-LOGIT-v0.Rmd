@@ -1,5 +1,5 @@
 ---
-title: "CLF"
+title: "E2PR"
 author: "Nate Thomas"
 date: "2023-03-28"
 output: html_document
@@ -23,7 +23,6 @@ library(svMisc)
 library(usethis)
 library(lubridate)
 library(plm)
-library(tidyverse)
 
 source("gcs_interface.R")
 cloud_prep()
@@ -149,8 +148,6 @@ mod_logit <- list()
 
 
 ```{r}
-i=1536
-yr = 2022
 for (yr  in 2022:2009){
  for (i in dim(filterer)[1]:1){
    print(yr)
@@ -170,7 +167,7 @@ for (yr  in 2022:2009){
        filterer[i,"erranddifficulty"] == "Any") 
       ){
           mod_df <- df1 %>%
-            mutate(y = ifelse(laborforce=="In the laborforce",1,0)) %>%
+            mutate(y = ifelse(employed=="Employed",1,0)) %>%
             filter(civilian == "civilian", age16up == 1, year == yr) %>%
             select(y, id, contains("pwsswgt"), year, month, state, sex, race, hisp, married, 
                    educ, disability, hearing, seeing, remembering, mobility, 
@@ -307,26 +304,18 @@ for (yr  in 2022:2009){
         mod_summary$terms <- NA
         
         cloud_prep()
-        saveRDS(mod_logit[[i]], paste("gen",YEAR,"_analysis",yr,"_",i,"lf_models.rds",sep=""))
-        saveRDS(mod_summary, paste("gen",YEAR,"_analysis",yr,"_",i,"lf_models_summary.rds",sep=""))
+        saveRDS(mod_logit[[i]], paste("gen",YEAR,"_analysis",yr,"_",i,"e2pr_models.rds",sep=""))
+        saveRDS(mod_summary, paste("gen",YEAR,"_analysis",yr,"_",i,"e2pr_models_summary.rds",sep=""))
         
-        send_object(paste("gen",YEAR,"_analysis",yr,"_",i,"lf_models.rds",sep=""),
+        send_object(paste("gen",YEAR,"_analysis",yr,"_",i,"e2pr_models.rds",sep=""),
                     "demographics_project_models",
-                    paste("gen",YEAR,"_analysis",yr,"_",i,"lf_models.rds",sep=""))
-        send_object(paste("gen",YEAR,"_analysis",yr,"_",i,"lf_models_summary.rds",sep=""),
+                    paste("gen",YEAR,"_analysis",yr,"_",i,"e2pr_models.rds",sep=""))
+        send_object(paste("gen",YEAR,"_analysis",yr,"_",i,"e2pr_models_summary.rds",sep=""),
                     "demographics_project_models",
-                    paste("gen",YEAR,"_analysis",yr,"_",i,"lf_models_summary.rds",sep=""))
+                    paste("gen",YEAR,"_analysis",yr,"_",i,"e2pr_models_summary.rds",sep=""))
       }
       
       mod_logit[[i]] <- NA   
      }
 }
-```
-
-
-
-
-
-
-```{r}
 ```

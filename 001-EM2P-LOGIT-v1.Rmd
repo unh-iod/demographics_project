@@ -1,0 +1,991 @@
+---
+title: "E2PR"
+author: "Nate Thomas"
+date: "2023-03-28"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+memory.limit(32000000)
+memory.size(32000000)
+
+YEAR = 2023
+
+library(butcher)
+library(R.utils)
+library(utils)
+library(dplyr)
+library(plyr)
+library(survey)
+library(mltools)
+library(data.table)
+library(svMisc)
+library(usethis)
+library(lubridate)
+library(plm)
+
+source("gcs_interface.R")
+cloud_prep()
+```
+
+```{r}
+get_object("Profile 15 --- regression_dataset (2009-2022).csv", "demographics_project_raw") 
+df1 <- read.csv("_downloaded_.csv")
+unlink("_downloaded_.csv")
+```
+
+# Set reference groupgs:
+
+```{r}
+df1 <- df1 %>%
+  mutate(year = as.factor(year),
+         month = as.factor(month),
+         state = as.factor(state),
+         sex = as.factor(sex),
+         race = as.factor(race),
+         hisp = as.factor(hisp),
+         married = as.factor(married),
+         educ = as.factor(educ),
+         disability = as.factor(disability),
+         hearing = as.factor(hearing),
+         seeing = as.factor(seeing),
+         remembering = as.factor(remembering),
+         mobility = as.factor(mobility),
+         selfcare = as.factor(selfcare),
+         erranddifficulty = as.factor(erranddifficulty))
+
+df1 <- df1 %>% within(state <- relevel(state, ref = "CA"))
+df1 <- df1 %>% within(sex <- relevel(sex, ref = "Men"))
+df1 <- df1 %>% within(race <- relevel(race, ref = "White"))
+df1 <- df1 %>% within(hisp <- relevel(hisp, ref = "Non-Hispanic nor Latino ethnicity"))
+df1 <- df1 %>% within(married <- relevel(married, ref = "Married"))
+df1 <- df1 %>% within(educ <- relevel(educ, ref = "High school graduates, no college"))
+
+df1 <- df1 %>% within(disability <- relevel(disability, ref =  "No Disability"))
+df1 <- df1 %>% within(hearing <- relevel(hearing, ref =  "no hearing disabilty"))
+df1 <- df1 %>% within(seeing <- relevel(seeing, ref =  "no seeing disability"))
+df1 <- df1 %>% within(remembering <- relevel(remembering, ref =  "no remembering disability"))
+df1 <- df1 %>% within(mobility <- relevel(mobility, ref =  "no mobility disability"))
+df1 <- df1 %>% within(selfcare <- relevel(selfcare, ref =  "no selfcare disability"))
+df1 <- df1 %>% within(erranddifficulty <- relevel(erranddifficulty, ref =  "no errand difficulty disability"))
+
+df1$id <- 1:nrow(df1)
+df1
+```
+
+# Possible selection combinations
+
+```{r}
+filterer <- data.frame(state = c("All","Any"),
+           sex = c("All","Any"),
+           race= c("All","Any"),
+           hisp= c("All","Any"),
+           married= c("All","Any"),
+           educ= c("All","Any"),
+           disability= c("All","Any"),
+           hearing= c("All","Any"),
+           seeing= c("All","Any"),
+           remembering= c("All","Any"),
+           mobility= c("All","Any"),
+           selfcare= c("All","Any"),
+           erranddifficulty= c("All","Any"),
+           age1664 = c("All","Any"),
+           age25up =  c("All","Any")) %>%
+  tidyr::expand(state,sex,race,hisp,married,educ,disability,
+                hearing,seeing,remembering,mobility,selfcare,
+                erranddifficulty,age1664,age25up)
+
+filterer <- filterer %>%
+  filter(!(disability == "Any" & hearing == "Any") & 
+         !(disability == "Any" & seeing == "Any") &
+         !(disability == "Any" & remembering == "Any") &
+         !(disability == "Any" & mobility == "Any") &
+         !(disability == "Any" & selfcare == "Any") &
+         !(disability == "Any" & erranddifficulty == "Any") &
+         !(hearing == "Any" & seeing == "Any") &
+         !(hearing == "Any" & remembering == "Any") &
+         !(hearing == "Any" & mobility == "Any") &
+         !(hearing == "Any" & selfcare == "Any") &
+         !(hearing == "Any" & erranddifficulty == "Any") &
+           
+         !(seeing == "Any" & remembering == "Any") &
+         !(seeing == "Any" & mobility == "Any") &
+         !(seeing == "Any" & selfcare == "Any") &
+         !(seeing == "Any" & erranddifficulty == "Any") &
+           
+         !(remembering == "Any" & mobility == "Any") &
+         !(remembering == "Any" & selfcare == "Any") &
+         !(remembering == "Any" & erranddifficulty == "Any") &
+           
+         !(mobility == "Any" & selfcare == "Any") &
+         !(mobility == "Any" & erranddifficulty == "Any") &
+           
+         !(selfcare == "Any" & erranddifficulty == "Any") &
+           
+         !(age1664 == "Any" & age25up == "Any"))
+
+
+which((filterer[,"state"] == "Any" &
+      filterer[,"race"] == "Any" &
+      filterer[,"sex"] == "Any" &
+      filterer[,"hisp"] == "Any" &
+      filterer[,"married"] == "Any" &
+      filterer[,"educ"] == "Any" &
+      (filterer[,"disability"] == "Any" |
+       filterer[,"hearing"] == "Any" |
+       filterer[,"seeing"] == "Any" |
+       filterer[,"remembering"] == "Any" |
+       filterer[,"mobility"] == "Any" |
+       filterer[,"selfcare"] == "Any" |
+       filterer[,"erranddifficulty"] == "Any") 
+      ))
+```
+
+
+```{r}
+mod_logit <- list()
+```
+
+
+```{r}
+# i=1536
+# yr = 2022
+# for (yr  in 2022:2009){
+#  for (i in dim(filterer)[1]:1){
+#    print(yr)
+#    print(i)
+#    if(filterer[i,"state"] == "Any" &
+#       filterer[i,"race"] == "Any" &
+#       filterer[i,"sex"] == "Any" &
+#       filterer[i,"hisp"] == "Any" &
+#       filterer[i,"married"] == "Any" &
+#       filterer[i,"educ"] == "Any" &
+#       (filterer[i,"disability"] == "Any" |
+#        filterer[i,"hearing"] == "Any" |
+#        filterer[i,"seeing"] == "Any" |
+#        filterer[i,"remembering"] == "Any" |
+#        filterer[i,"mobility"] == "Any" |
+#        filterer[i,"selfcare"] == "Any" |
+#        filterer[i,"erranddifficulty"] == "Any") 
+#       ){
+          # mod_df <- df1 %>%
+          #   mutate(y = ifelse(employed=="Employed",1,0)) %>%
+          #   filter(civilian == "civilian", age16up == 1, year == yr) %>%
+          #   select(y, id, contains("pwsswgt"), year, month, state, sex, race, hisp, married, 
+          #          educ, disability, hearing, seeing, remembering, mobility, 
+          #          selfcare, erranddifficulty, age1664, age25up, prtage)
+#         
+#         inter <- ""
+#         if (filterer[i,"state"] == "Any" & filterer[i,"disability"] == "Any") {
+#           inter <- "state*disability"
+#         }
+#         if (filterer[i,"state"] == "Any" & filterer[i,"hearing"] == "Any") {
+#           inter <- "state*hearing"
+#         }
+#         if (filterer[i,"state"] == "Any" & filterer[i,"seeing"] == "Any") {
+#           inter <- "state*seeing"
+#         }
+#         if (filterer[i,"state"] == "Any" & filterer[i,"remembering"] == "Any") {
+#           inter <- "state*remembering"
+#         }
+#         if (filterer[i,"state"] == "Any" & filterer[i,"mobility"] == "Any") {
+#           inter <- "state*mobility"
+#         }
+#         if (filterer[i,"state"] == "Any" & filterer[i,"selfcare"] == "Any") {
+#           inter <- "state*selfcare"
+#         }
+#         if (filterer[i,"state"] == "Any" & filterer[i,"erranddifficulty"] == "Any") {
+#           inter <- "state*erranddifficulty"
+#         }
+#         if (filterer[i,"state"] == "All") {
+#           mod_df <- mod_df %>% select(-state)
+#         }
+#         if (filterer[i,"sex"] == "All") {
+#           mod_df <- mod_df %>% select(-sex)
+#         }
+#         if (filterer[i,"race"] == "All") {
+#           mod_df <- mod_df %>% select(-race)
+#         }
+#         if (filterer[i,"hisp"] == "All") {
+#           mod_df <- mod_df %>% select(-hisp)
+#         }
+#         if (filterer[i,"married"] == "All") {
+#           mod_df <- mod_df %>% select(-married)
+#         }
+#         if (filterer[i,"educ"] == "All") {
+#           mod_df <- mod_df %>% select(-educ)
+#         }
+#         if (filterer[i,"disability"] == "All") {
+#           mod_df <- mod_df %>% select(-disability)
+#         }
+#         if (filterer[i,"hearing"] == "All") {
+#           mod_df <- mod_df %>% select(-hearing)
+#         }
+#         if (filterer[i,"seeing"] == "All") {
+#           mod_df <- mod_df %>% select(-seeing)
+#         }
+#         if (filterer[i,"mobility"] == "All") {
+#           mod_df <- mod_df %>% select(-mobility)
+#         }
+#         if (filterer[i,"selfcare"] == "All") {
+#           mod_df <- mod_df %>% select(-selfcare)
+#         }
+#         if (filterer[i,"erranddifficulty"] == "All") {
+#           mod_df <- mod_df %>% select(-erranddifficulty)
+#         }
+#         if (filterer[i,"remembering"] == "All") {
+#           mod_df <- mod_df %>% select(-remembering)
+#         }
+#         if (filterer[i,"age1664"] == "All") {
+#           mod_df <- mod_df %>% select(-age1664)
+#         }else{
+#           mod_df <- mod_df %>%
+#             filter(age1664 == 1)
+#           mod_df <- mod_df %>% select(-age1664)
+#         }
+#         if (filterer[i,"age25up"] == "All") {
+#           mod_df <- mod_df %>% select(-age25up)
+#         }else{
+#           mod_df <- mod_df %>%
+#             filter(age25up == 1)
+#           mod_df <- mod_df %>% select(-age25up)
+#         }
+#         mod_df$prtage <- mod_df$prtage %>% scale() %>% as.numeric()
+#         mod_df$prtage2 <-  mod_df$prtage^2
+#         mod_df$prtage3 <-  mod_df$prtage^3
+#         mod_design <- svydesign(id=~id, weights=~pwsswgt, data=mod_df)
+#         variables <- names(filterer[which(filterer[i,] == "Any")])
+#         variables <- variables[!grepl("^age",variables)]
+#         if (all(filterer[i,] == "All")){
+#           mod_logit[[i]]  <- svyglm(y~month+prtage+prtage2+prtage3+1,
+#                               family = quasibinomial,
+#                               design = mod_design)
+#           mod_summary <- mod_logit[[i]]%>% summary()
+#           mod_summary$deviance.resid <- NA
+#         }
+#         if (!all(filterer[i,] == "All")){
+#           mod_logit[[i]]  <- svyglm(paste("y~month+prtage+prtage2+prtage3+",paste(variables,collapse = "+"),"+",inter,"+1",sep=""),
+#                               family = quasibinomial,
+#                               design = mod_design,
+#                               rescale = TRUE)
+#           mod_summary <- mod_logit[[i]]%>% summary()
+#           mod_summary$deviance.resid <- NA
+#         }
+#         
+#         mod_logit[[i]]$residuals <- NA
+#         mod_logit[[i]]$fitted.values <- NA
+#         mod_logit[[i]]$effects <- NA
+#         mod_logit[[i]]$qr <- NA
+#         mod_logit[[i]]$linear.predictors <- NA
+#         mod_logit[[i]]$weights <- NA
+#         mod_logit[[i]]$prior.weights <- NA
+#         mod_logit[[i]]$y <- NA
+#         mod_logit[[i]]$model <- NA
+#         mod_logit[[i]]$data <- NA
+#         mod_logit[[i]]$survey.design <- NA
+#       
+#         mod_logit[[i]]$family$linkfun <- NA
+#         mod_logit[[i]]$family$dev.resid <- NA
+#         mod_logit[[i]]$family$variance <- NA
+#         mod_logit[[i]]$family$dev.resids <- NA
+#         mod_logit[[i]]$family$aic <- NA
+#         mod_logit[[i]]$family$validmu <- NA
+#         mod_logit[[i]]$family$valideta <- NA
+#       
+#         mod_logit[[i]]$R <- NA
+#         mod_logit[[i]]$family$initialize <- NA
+#         mod_logit[[i]]$deviance <- NA
+#         mod_logit[[i]]$null.deviance <- NA
+#         mod_logit[[i]]$iter <- NA
+#         mod_logit[[i]]$df.residual <- NA
+#         mod_logit[[i]]$df.null <- NA
+#         mod_logit[[i]]$call <- NA
+#         
+#         attr(mod_logit[[i]]$terms, ".Environment") <- NULL
+#       
+#         mod_summary$terms <- NA
+#         
+#         cloud_prep()
+#         saveRDS(mod_logit[[i]], paste("gen",YEAR,"_analysis",yr,"_",i,"e2pr_models.rds",sep=""))
+#         saveRDS(mod_summary, paste("gen",YEAR,"_analysis",yr,"_",i,"e2pr_models_summary.rds",sep=""))
+#         
+#         send_object(paste("gen",YEAR,"_analysis",yr,"_",i,"e2pr_models.rds",sep=""),
+#                     "demographics_project_models",
+#                     paste("gen",YEAR,"_analysis",yr,"_",i,"e2pr_models.rds",sep=""))
+#         send_object(paste("gen",YEAR,"_analysis",yr,"_",i,"e2pr_models_summary.rds",sep=""),
+#                     "demographics_project_models",
+#                     paste("gen",YEAR,"_analysis",yr,"_",i,"e2pr_models_summary.rds",sep=""))
+#       }
+#         unlink(paste("gen",YEAR,"_analysis",yr,"_",i,"e2pr_models.rds",sep=""))
+#         unlink(paste("gen",YEAR,"_analysis",yr,"_",i,"e2pr_models_summary.rds",sep=""))
+#       
+#       mod_logit[[i]] <- NA   
+#      }
+# }
+```
+
+
+## WITH INTERACTIONS
+
+```{r}
+yr = 2019
+i = 1534
+
+   print(yr)
+   print(i)
+   if(filterer[i,"state"] == "Any" &
+      filterer[i,"race"] == "Any" &
+      filterer[i,"sex"] == "Any" &
+      filterer[i,"hisp"] == "Any" &
+      filterer[i,"married"] == "Any" &
+      filterer[i,"educ"] == "Any" &
+      (filterer[i,"disability"] == "Any" |
+       filterer[i,"hearing"] == "Any" |
+       filterer[i,"seeing"] == "Any" |
+       filterer[i,"remembering"] == "Any" |
+       filterer[i,"mobility"] == "Any" |
+       filterer[i,"selfcare"] == "Any" |
+       filterer[i,"erranddifficulty"] == "Any") 
+      ){
+          mod_df <- df1 %>%
+            mutate(y = ifelse(employed=="Employed",1,0)) %>%
+            filter(civilian == "civilian", age16up == 1, year == yr) %>%
+            select(y, id, contains("pwsswgt"), year, month, state, sex, race, hisp, married, 
+                   educ, disability, hearing, seeing, remembering, mobility, 
+                   selfcare, erranddifficulty, age1664, age25up, prtage)
+        
+        inter <- ""
+        if (filterer[i,"state"] == "Any" & filterer[i,"disability"] == "Any") {
+          inter <- "state*disability"
+        }
+        if (filterer[i,"state"] == "Any" & filterer[i,"hearing"] == "Any") {
+          inter <- "state*hearing"
+        }
+        if (filterer[i,"state"] == "Any" & filterer[i,"seeing"] == "Any") {
+          inter <- "state*seeing"
+        }
+        if (filterer[i,"state"] == "Any" & filterer[i,"remembering"] == "Any") {
+          inter <- "state*remembering"
+        }
+        if (filterer[i,"state"] == "Any" & filterer[i,"mobility"] == "Any") {
+          inter <- "state*mobility"
+        }
+        if (filterer[i,"state"] == "Any" & filterer[i,"selfcare"] == "Any") {
+          inter <- "state*selfcare"
+        }
+        if (filterer[i,"state"] == "Any" & filterer[i,"erranddifficulty"] == "Any") {
+          inter <- "state*erranddifficulty"
+        }
+        if (filterer[i,"state"] == "All") {
+          mod_df <- mod_df %>% select(-state)
+        }
+        if (filterer[i,"sex"] == "All") {
+          mod_df <- mod_df %>% select(-sex)
+        }
+        if (filterer[i,"race"] == "All") {
+          mod_df <- mod_df %>% select(-race)
+        }
+        if (filterer[i,"hisp"] == "All") {
+          mod_df <- mod_df %>% select(-hisp)
+        }
+        if (filterer[i,"married"] == "All") {
+          mod_df <- mod_df %>% select(-married)
+        }
+        if (filterer[i,"educ"] == "All") {
+          mod_df <- mod_df %>% select(-educ)
+        }
+        if (filterer[i,"disability"] == "All") {
+          mod_df <- mod_df %>% select(-disability)
+        }
+        if (filterer[i,"hearing"] == "All") {
+          mod_df <- mod_df %>% select(-hearing)
+        }
+        if (filterer[i,"seeing"] == "All") {
+          mod_df <- mod_df %>% select(-seeing)
+        }
+        if (filterer[i,"mobility"] == "All") {
+          mod_df <- mod_df %>% select(-mobility)
+        }
+        if (filterer[i,"selfcare"] == "All") {
+          mod_df <- mod_df %>% select(-selfcare)
+        }
+        if (filterer[i,"erranddifficulty"] == "All") {
+          mod_df <- mod_df %>% select(-erranddifficulty)
+        }
+        if (filterer[i,"remembering"] == "All") {
+          mod_df <- mod_df %>% select(-remembering)
+        }
+        if (filterer[i,"age1664"] == "All") {
+          mod_df <- mod_df %>% select(-age1664)
+        }else{
+          mod_df <- mod_df %>%
+            filter(age1664 == 1)
+          mod_df <- mod_df %>% select(-age1664)
+        }
+        if (filterer[i,"age25up"] == "All") {
+          mod_df <- mod_df %>% select(-age25up)
+        }else{
+          mod_df <- mod_df %>%
+            filter(age25up == 1)
+          mod_df <- mod_df %>% select(-age25up)
+        }
+        mod_df$prtage <- mod_df$prtage %>% scale() %>% as.numeric()
+        mod_df$prtage2 <-  mod_df$prtage^2
+        mod_df$prtage3 <-  mod_df$prtage^3
+        mod_design <- svydesign(id=~id, weights=~pwsswgt, data=mod_df)
+        variables <- names(filterer[which(filterer[i,] == "Any")])
+        variables <- variables[!grepl("^age",variables)]
+        if (all(filterer[i,] == "All")){
+          mod_logit[[i]]  <- svyglm(y~month+prtage+prtage2+prtage3+1,
+                              family = quasibinomial,
+                              design = mod_design)
+          mod_summary <- mod_logit[[i]]%>% summary()
+          # mod_summary$deviance.resid <- NA
+        }
+        if (!all(filterer[i,] == "All")){
+          mod_logit[[i]]  <- svyglm(paste("y~month+prtage+prtage2+prtage3+",paste(variables,collapse = "+"),"+",inter,"+1",sep=""),
+                              family = quasibinomial,
+                              design = mod_design,
+                              rescale = TRUE)
+          mod_summary <- mod_logit[[i]]%>% summary()
+          #mod_summary$deviance.resid <- NA
+        }
+        
+        # mod_logit[[i]]$residuals <- NA
+        # mod_logit[[i]]$fitted.values <- NA
+        # mod_logit[[i]]$effects <- NA
+        # mod_logit[[i]]$qr <- NA
+        # mod_logit[[i]]$linear.predictors <- NA
+        # mod_logit[[i]]$weights <- NA
+        # mod_logit[[i]]$prior.weights <- NA
+        # mod_logit[[i]]$y <- NA
+        # mod_logit[[i]]$model <- NA
+        # mod_logit[[i]]$data <- NA
+        # mod_logit[[i]]$survey.design <- NA
+        # 
+        # mod_logit[[i]]$family$linkfun <- NA
+        # mod_logit[[i]]$family$dev.resid <- NA
+        # mod_logit[[i]]$family$variance <- NA
+        # mod_logit[[i]]$family$dev.resids <- NA
+        # mod_logit[[i]]$family$aic <- NA
+        # mod_logit[[i]]$family$validmu <- NA
+        # mod_logit[[i]]$family$valideta <- NA
+        # 
+        # mod_logit[[i]]$R <- NA
+        # mod_logit[[i]]$family$initialize <- NA
+        # mod_logit[[i]]$deviance <- NA
+        # mod_logit[[i]]$null.deviance <- NA
+        # mod_logit[[i]]$iter <- NA
+        # mod_logit[[i]]$df.residual <- NA
+        # mod_logit[[i]]$df.null <- NA
+        # mod_logit[[i]]$call <- NA
+        # 
+        # attr(mod_logit[[i]]$terms, ".Environment") <- NULL
+        # 
+        # mod_summary$terms <- NA
+
+      }
+      
+      mod_wint <- mod_logit[[i]]
+```
+
+
+## WITHOUT INTERACTIONS
+
+```{r}
+yr = 2019
+i = 1534
+
+   print(yr)
+   print(i)
+   if(filterer[i,"state"] == "Any" &
+      filterer[i,"race"] == "Any" &
+      filterer[i,"sex"] == "Any" &
+      filterer[i,"hisp"] == "Any" &
+      filterer[i,"married"] == "Any" &
+      filterer[i,"educ"] == "Any" &
+      (filterer[i,"disability"] == "Any" |
+       filterer[i,"hearing"] == "Any" |
+       filterer[i,"seeing"] == "Any" |
+       filterer[i,"remembering"] == "Any" |
+       filterer[i,"mobility"] == "Any" |
+       filterer[i,"selfcare"] == "Any" |
+       filterer[i,"erranddifficulty"] == "Any") 
+      ){
+          mod_df <- df1 %>%
+            mutate(y = ifelse(employed=="Employed",1,0)) %>%
+            filter(civilian == "civilian", age16up == 1, year == yr) %>%
+            select(y, id, contains("pwsswgt"), year, month, state, sex, race, hisp, married, 
+                   educ, disability, hearing, seeing, remembering, mobility, 
+                   selfcare, erranddifficulty, age1664, age25up, prtage)
+        
+        if (filterer[i,"state"] == "Any" & filterer[i,"disability"] == "Any") {
+        }
+        if (filterer[i,"state"] == "Any" & filterer[i,"hearing"] == "Any") {
+        }
+        if (filterer[i,"state"] == "Any" & filterer[i,"seeing"] == "Any") {
+        }
+        if (filterer[i,"state"] == "Any" & filterer[i,"remembering"] == "Any") {
+        }
+        if (filterer[i,"state"] == "Any" & filterer[i,"mobility"] == "Any") {
+        }
+        if (filterer[i,"state"] == "Any" & filterer[i,"selfcare"] == "Any") {
+        }
+        if (filterer[i,"state"] == "Any" & filterer[i,"erranddifficulty"] == "Any") {
+        }
+        if (filterer[i,"state"] == "All") {
+          mod_df <- mod_df %>% select(-state)
+        }
+        if (filterer[i,"sex"] == "All") {
+          mod_df <- mod_df %>% select(-sex)
+        }
+        if (filterer[i,"race"] == "All") {
+          mod_df <- mod_df %>% select(-race)
+        }
+        if (filterer[i,"hisp"] == "All") {
+          mod_df <- mod_df %>% select(-hisp)
+        }
+        if (filterer[i,"married"] == "All") {
+          mod_df <- mod_df %>% select(-married)
+        }
+        if (filterer[i,"educ"] == "All") {
+          mod_df <- mod_df %>% select(-educ)
+        }
+        if (filterer[i,"disability"] == "All") {
+          mod_df <- mod_df %>% select(-disability)
+        }
+        if (filterer[i,"hearing"] == "All") {
+          mod_df <- mod_df %>% select(-hearing)
+        }
+        if (filterer[i,"seeing"] == "All") {
+          mod_df <- mod_df %>% select(-seeing)
+        }
+        if (filterer[i,"mobility"] == "All") {
+          mod_df <- mod_df %>% select(-mobility)
+        }
+        if (filterer[i,"selfcare"] == "All") {
+          mod_df <- mod_df %>% select(-selfcare)
+        }
+        if (filterer[i,"erranddifficulty"] == "All") {
+          mod_df <- mod_df %>% select(-erranddifficulty)
+        }
+        if (filterer[i,"remembering"] == "All") {
+          mod_df <- mod_df %>% select(-remembering)
+        }
+        if (filterer[i,"age1664"] == "All") {
+          mod_df <- mod_df %>% select(-age1664)
+        }else{
+          mod_df <- mod_df %>%
+            filter(age1664 == 1)
+          mod_df <- mod_df %>% select(-age1664)
+        }
+        if (filterer[i,"age25up"] == "All") {
+          mod_df <- mod_df %>% select(-age25up)
+        }else{
+          mod_df <- mod_df %>%
+            filter(age25up == 1)
+          mod_df <- mod_df %>% select(-age25up)
+        }
+        
+        mod_df$prtage <- mod_df$prtage %>% scale() %>% as.numeric()
+        mod_df$prtage2 <-  mod_df$prtage^2
+        mod_df$prtage3 <-  mod_df$prtage^3
+        mod_design <- svydesign(id=~id, weights=~pwsswgt, data=mod_df)
+        variables <- names(filterer[which(filterer[i,] == "Any")])
+        variables <- variables[!grepl("^age",variables)]
+        if (all(filterer[i,] == "All")){
+          mod_logit[[i]]  <- svyglm(y~month+prtage+prtage2+prtage3+1,
+                              family = quasibinomial,
+                              design = mod_design)
+          mod_summary <- mod_logit[[i]]%>% summary()
+          # mod_summary$deviance.resid <- NA
+        }
+        if (!all(filterer[i,] == "All")){
+          mod_logit[[i]]  <- svyglm(paste("y~month+prtage+prtage2+prtage3+",paste(variables,collapse = "+"),"+1",sep=""),
+                              family = quasibinomial,
+                              design = mod_design,
+                              rescale = TRUE)
+          mod_summary <- mod_logit[[i]]%>% summary()
+          # mod_summary$deviance.resid <- NA
+        }
+        
+        # mod_logit[[i]]$residuals <- NA
+        # mod_logit[[i]]$fitted.values <- NA
+        # mod_logit[[i]]$effects <- NA
+        # mod_logit[[i]]$qr <- NA
+        # mod_logit[[i]]$linear.predictors <- NA
+        # mod_logit[[i]]$weights <- NA
+        # mod_logit[[i]]$prior.weights <- NA
+        # mod_logit[[i]]$y <- NA
+        # mod_logit[[i]]$model <- NA
+        # mod_logit[[i]]$data <- NA
+        # mod_logit[[i]]$survey.design <- NA
+        # 
+        # mod_logit[[i]]$family$linkfun <- NA
+        # mod_logit[[i]]$family$dev.resid <- NA
+        # mod_logit[[i]]$family$variance <- NA
+        # mod_logit[[i]]$family$dev.resids <- NA
+        # mod_logit[[i]]$family$aic <- NA
+        # mod_logit[[i]]$family$validmu <- NA
+        # mod_logit[[i]]$family$valideta <- NA
+        # 
+        # mod_logit[[i]]$R <- NA
+        # mod_logit[[i]]$family$initialize <- NA
+        # mod_logit[[i]]$deviance <- NA
+        # mod_logit[[i]]$null.deviance <- NA
+        # mod_logit[[i]]$iter <- NA
+        # mod_logit[[i]]$df.residual <- NA
+        # mod_logit[[i]]$df.null <- NA
+        # mod_logit[[i]]$call <- NA
+        # 
+        # attr(mod_logit[[i]]$terms, ".Environment") <- NULL
+        # 
+        # mod_summary$terms <- NA
+      }
+      
+      # mod_logit[[i]] <- NA  
+   mod_woint <-mod_logit[[i]]
+```
+
+## WITHOUT DISABILIY
+
+```{r}
+yr = 2019
+i = 1534
+
+   print(yr)
+   print(i)
+   if(filterer[i,"state"] == "Any" &
+      filterer[i,"race"] == "Any" &
+      filterer[i,"sex"] == "Any" &
+      filterer[i,"hisp"] == "Any" &
+      filterer[i,"married"] == "Any" &
+      filterer[i,"educ"] == "Any" &
+      (filterer[i,"disability"] == "Any" |
+       filterer[i,"hearing"] == "Any" |
+       filterer[i,"seeing"] == "Any" |
+       filterer[i,"remembering"] == "Any" |
+       filterer[i,"mobility"] == "Any" |
+       filterer[i,"selfcare"] == "Any" |
+       filterer[i,"erranddifficulty"] == "Any") 
+      ){
+          mod_df <- df1 %>%
+            mutate(y = ifelse(employed=="Employed",1,0)) %>%
+            filter(civilian == "civilian", age16up == 1, year == yr) %>%
+            select(y, id, contains("pwsswgt"), year, month, state, sex, race, hisp, married, 
+                   educ, disability, hearing, seeing, remembering, mobility, 
+                   selfcare, erranddifficulty, age1664, age25up, prtage)
+        
+        if (filterer[i,"state"] == "Any" & filterer[i,"disability"] == "Any") {
+        }
+        if (filterer[i,"state"] == "Any" & filterer[i,"hearing"] == "Any") {
+        }
+        if (filterer[i,"state"] == "Any" & filterer[i,"seeing"] == "Any") {
+        }
+        if (filterer[i,"state"] == "Any" & filterer[i,"remembering"] == "Any") {
+        }
+        if (filterer[i,"state"] == "Any" & filterer[i,"mobility"] == "Any") {
+        }
+        if (filterer[i,"state"] == "Any" & filterer[i,"selfcare"] == "Any") {
+        }
+        if (filterer[i,"state"] == "Any" & filterer[i,"erranddifficulty"] == "Any") {
+        }
+        if (filterer[i,"state"] == "All") {
+          mod_df <- mod_df %>% select(-state)
+        }
+        if (filterer[i,"sex"] == "All") {
+          mod_df <- mod_df %>% select(-sex)
+        }
+        if (filterer[i,"race"] == "All") {
+          mod_df <- mod_df %>% select(-race)
+        }
+        if (filterer[i,"hisp"] == "All") {
+          mod_df <- mod_df %>% select(-hisp)
+        }
+        if (filterer[i,"married"] == "All") {
+          mod_df <- mod_df %>% select(-married)
+        }
+        if (filterer[i,"educ"] == "All") {
+          mod_df <- mod_df %>% select(-educ)
+        }
+        if (filterer[i,"disability"] == "All") {
+          mod_df <- mod_df %>% select(-disability)
+        }
+        if (filterer[i,"hearing"] == "All") {
+          mod_df <- mod_df %>% select(-hearing)
+        }
+        if (filterer[i,"seeing"] == "All") {
+          mod_df <- mod_df %>% select(-seeing)
+        }
+        if (filterer[i,"mobility"] == "All") {
+          mod_df <- mod_df %>% select(-mobility)
+        }
+        if (filterer[i,"selfcare"] == "All") {
+          mod_df <- mod_df %>% select(-selfcare)
+        }
+        if (filterer[i,"erranddifficulty"] == "All") {
+          mod_df <- mod_df %>% select(-erranddifficulty)
+        }
+        if (filterer[i,"remembering"] == "All") {
+          mod_df <- mod_df %>% select(-remembering)
+        }
+        if (filterer[i,"age1664"] == "All") {
+          mod_df <- mod_df %>% select(-age1664)
+        }else{
+          mod_df <- mod_df %>%
+            filter(age1664 == 1)
+          mod_df <- mod_df %>% select(-age1664)
+        }
+        if (filterer[i,"age25up"] == "All") {
+          mod_df <- mod_df %>% select(-age25up)
+        }else{
+          mod_df <- mod_df %>%
+            filter(age25up == 1)
+          mod_df <- mod_df %>% select(-age25up)
+        }
+        ############
+        mod_df <- mod_df %>% select(-disability)
+        ############
+
+          
+        mod_df$prtage <- mod_df$prtage %>% scale() %>% as.numeric()
+        mod_df$prtage2 <-  mod_df$prtage^2
+        mod_df$prtage3 <-  mod_df$prtage^3
+        mod_design <- svydesign(id=~id, weights=~pwsswgt, data=mod_df)
+        variables <- names(filterer[which(filterer[i,] == "Any")])
+        variables <- variables[!grepl("^age",variables)]
+        variables <- variables[!grepl("disability",variables)]
+        if (all(filterer[i,] == "All")){
+          mod_logit[[i]]  <- svyglm(y~month+prtage+prtage2+prtage3+1,
+                              family = quasibinomial,
+                              design = mod_design)
+          mod_summary <- mod_logit[[i]]%>% summary()
+          # mod_summary$deviance.resid <- NA
+        }
+        if (!all(filterer[i,] == "All")){
+          mod_logit[[i]]  <- svyglm(paste("y~month+prtage+prtage2+prtage3+",paste(variables,collapse = "+"),"+1",sep=""),
+                              family = quasibinomial,
+                              design = mod_design,
+                              rescale = TRUE)
+          mod_summary <- mod_logit[[i]]%>% summary()
+          # mod_summary$deviance.resid <- NA
+        }
+        
+        # mod_logit[[i]]$residuals <- NA
+        # mod_logit[[i]]$fitted.values <- NA
+        # mod_logit[[i]]$effects <- NA
+        # mod_logit[[i]]$qr <- NA
+        # mod_logit[[i]]$linear.predictors <- NA
+        # mod_logit[[i]]$weights <- NA
+        # mod_logit[[i]]$prior.weights <- NA
+        # mod_logit[[i]]$y <- NA
+        # mod_logit[[i]]$model <- NA
+        # mod_logit[[i]]$data <- NA
+        # mod_logit[[i]]$survey.design <- NA
+        # 
+        # mod_logit[[i]]$family$linkfun <- NA
+        # mod_logit[[i]]$family$dev.resid <- NA
+        # mod_logit[[i]]$family$variance <- NA
+        # mod_logit[[i]]$family$dev.resids <- NA
+        # mod_logit[[i]]$family$aic <- NA
+        # mod_logit[[i]]$family$validmu <- NA
+        # mod_logit[[i]]$family$valideta <- NA
+        # 
+        # mod_logit[[i]]$R <- NA
+        # mod_logit[[i]]$family$initialize <- NA
+        # mod_logit[[i]]$deviance <- NA
+        # mod_logit[[i]]$null.deviance <- NA
+        # mod_logit[[i]]$iter <- NA
+        # mod_logit[[i]]$df.residual <- NA
+        # mod_logit[[i]]$df.null <- NA
+        # mod_logit[[i]]$call <- NA
+        # 
+        # attr(mod_logit[[i]]$terms, ".Environment") <- NULL
+        # 
+        # mod_summary$terms <- NA
+      }
+      
+      # mod_logit[[i]] <- NA  
+   mod_wodis <-mod_logit[[i]]
+```
+```{r}
+mod_anova_dis_chi <- anova(mod_wodis,mod_woint, test = "Chisq", method = "LRT")
+
+mod_anova_int_chi <- anova(mod_woint,mod_wint, test = "Chisq", method = "LRT")
+
+saveRDS(mod_anova_dis_chi,paste("gen",YEAR,"_analysis",yr,"_",i,"e2pr_models_anova_chi_dis.rds",sep=""))
+saveRDS(mod_anova_int_chi,paste("gen",YEAR,"_analysis",yr,"_",i,"e2pr_models_anova_chi_int.rds",sep=""))
+send_object( paste("gen",YEAR,"_analysis",yr,"_",i,"e2pr_models_anova_chi_dis.rds",sep=""),"demographics_project_models",paste("gen",YEAR,"_analysis",yr,"_",i,"e2pr_models_anova_chi_dis.rds",sep=""))
+send_object( paste("gen",YEAR,"_analysis",yr,"_",i,"e2pr_models_anova_chi_int.rds",sep=""),"demographics_project_models",paste("gen",YEAR,"_analysis",yr,"_",i,"e2pr_models_anova_chi_int.rds",sep=""))
+
+unlink(paste("gen",YEAR,"_analysis",yr,"_",i,"e2pr_models_anova_chi_dis.rds",sep=""))
+unlink(paste("gen",YEAR,"_analysis",yr,"_",i,"e2pr_models_anova_chi_int.rds",sep=""))
+```
+
+```{r}
+mod_anova_dis <- anova(mod_wodis,mod_woint, test = "F", method = "Wald")
+butcher::weigh(mod_anova_dis)
+
+mod_anova_int <- anova(mod_woint,mod_wint, test = "F", method = "Wald")
+butcher::weigh(mod_anova_int)
+
+saveRDS(mod_anova_dis,paste("gen",YEAR,"_analysis",yr,"_",i,"e2pr_models_anova_dis.rds",sep=""))
+saveRDS(mod_anova_int,paste("gen",YEAR,"_analysis",yr,"_",i,"e2pr_models_anova_int.rds",sep=""))
+send_object( paste("gen",YEAR,"_analysis",yr,"_",i,"e2pr_models_anova_dis.rds",sep=""),"demographics_project_models",paste("gen",YEAR,"_analysis",yr,"_",i,"e2pr_models_anova_dis.rds",sep=""))
+send_object( paste("gen",YEAR,"_analysis",yr,"_",i,"e2pr_models_anova_int.rds",sep=""),"demographics_project_models",paste("gen",YEAR,"_analysis",yr,"_",i,"e2pr_models_anova_int.rds",sep=""))
+
+unlink(paste("gen",YEAR,"_analysis",yr,"_",i,"e2pr_models_anova_dis.rds",sep=""))
+unlink(paste("gen",YEAR,"_analysis",yr,"_",i,"e2pr_models_anova_int.rds",sep=""))
+```
+
+```{r}
+mod_wodis_summary <- mod_wodis %>% summary()
+
+        mod_wodis_summary$terms <- NA
+        mod_wodis$residuals <- NA
+        mod_wodis$fitted.values <- NA
+        mod_wodis$effects <- NA
+        mod_wodis$qr <- NA
+        mod_wodis$linear.predictors <- NA
+        mod_wodis$weights <- NA
+        mod_wodis$prior.weights <- NA
+        mod_wodis$y <- NA
+        mod_wodis$model <- NA
+        mod_wodis$data <- NA
+        mod_wodis$survey.design <- NA
+
+        mod_wodis$family$linkfun <- NA
+        mod_wodis$family$dev.resid <- NA
+        mod_wodis$family$variance <- NA
+        mod_wodis$family$dev.resids <- NA
+        mod_wodis$family$aic <- NA
+        mod_wodis$family$validmu <- NA
+        mod_wodis$family$valideta <- NA
+
+        mod_wodis$R <- NA
+        mod_wodis$family$initialize <- NA
+        mod_wodis$deviance <- NA
+        mod_wodis$null.deviance <- NA
+        mod_wodis$iter <- NA
+        mod_wodis$df.residual <- NA
+        mod_wodis$df.null <- NA
+        mod_wodis$call <- NA
+
+        attr(mod_wodis$terms, ".Environment") <- NULL
+
+        mod_summary$terms <- NA
+
+        saveRDS(mod_wodis, paste("gen",YEAR,"_analysis",yr,"_",i,"e2pr_models_wodis.rds",sep=""))
+        saveRDS(mod_wodis_summary,
+                paste("gen",YEAR,"_analysis",yr,"_",i,"e2pr_models_wodis_summary.rds",sep=""))
+        
+        send_object(paste("gen",YEAR,"_analysis",yr,"_",i,"e2pr_models_wodis.rds",sep=""),
+                    "demographics_project_models",
+                    paste("gen",YEAR,"_analysis",yr,"_",i,"e2pr_models_wodis.rds",sep=""))
+        send_object(paste("gen",YEAR,"_analysis",yr,"_",i,"e2pr_models_wodis_summary.rds",sep=""),
+                    "demographics_project_models",
+                    paste("gen",YEAR,"_analysis",yr,"_",i,"e2pr_models_wodis_summary.rds",sep=""))
+         unlink(paste("gen",YEAR,"_analysis",yr,"_",i,"e2pr_models_wodis.rds",sep=""))
+         unlink(paste("gen",YEAR,"_analysis",yr,"_",i,"e2pr_models_wodis_summary.rds",sep=""))
+```
+
+```{r}
+mod_wint_summary <- mod_wint %>% summary()
+        mod_wint_summary$terms <- NA
+        mod_wint$residuals <- NA
+        mod_wint$fitted.values <- NA
+        mod_wint$effects <- NA
+        mod_wint$qr <- NA
+        mod_wint$linear.predictors <- NA
+        mod_wint$weights <- NA
+        mod_wint$prior.weights <- NA
+        mod_wint$y <- NA
+        mod_wint$model <- NA
+        mod_wint$data <- NA
+        mod_wint$survey.design <- NA
+
+        mod_wint$family$linkfun <- NA
+        mod_wint$family$dev.resid <- NA
+        mod_wint$family$variance <- NA
+        mod_wint$family$dev.resids <- NA
+        mod_wint$family$aic <- NA
+        mod_wint$family$validmu <- NA
+        mod_wint$family$valideta <- NA
+
+        mod_wint$R <- NA
+        mod_wint$family$initialize <- NA
+        mod_wint$deviance <- NA
+        mod_wint$null.deviance <- NA
+        mod_wint$iter <- NA
+        mod_wint$df.residual <- NA
+        mod_wint$df.null <- NA
+        mod_wint$call <- NA
+
+        attr(mod_wint$terms, ".Environment") <- NULL
+
+        mod_summary$terms <- NA
+
+        saveRDS(mod_wint, paste("gen",YEAR,"_analysis",yr,"_",i,"e2pr_models_wint.rds",sep=""))
+        saveRDS(mod_wint_summary,
+                paste("gen",YEAR,"_analysis",yr,"_",i,"e2pr_models_wint_summary.rds",sep=""))
+        
+        send_object(paste("gen",YEAR,"_analysis",yr,"_",i,"e2pr_models_wint.rds",sep=""),
+                    "demographics_project_models",
+                    paste("gen",YEAR,"_analysis",yr,"_",i,"e2pr_models_wint.rds",sep=""))
+        send_object(paste("gen",YEAR,"_analysis",yr,"_",i,"e2pr_models_wint_summary.rds",sep=""),
+                    "demographics_project_models",
+                    paste("gen",YEAR,"_analysis",yr,"_",i,"e2pr_models_wint_summary.rds",sep=""))
+         unlink(paste("gen",YEAR,"_analysis",yr,"_",i,"e2pr_models_wint.rds",sep=""))
+         unlink(paste("gen",YEAR,"_analysis",yr,"_",i,"e2pr_models_wint_summary.rds",sep=""))
+```
+
+
+```{r}
+mod_woint_summary <- mod_woint %>% summary()
+        mod_woint_summary$terms <- NA
+        mod_woint$residuals <- NA
+        mod_woint$fitted.values <- NA
+        mod_woint$effects <- NA
+        mod_woint$qr <- NA
+        mod_woint$linear.predictors <- NA
+        mod_woint$weights <- NA
+        mod_woint$prior.weights <- NA
+        mod_woint$y <- NA
+        mod_woint$model <- NA
+        mod_woint$data <- NA
+        mod_woint$survey.design <- NA
+
+        mod_woint$family$linkfun <- NA
+        mod_woint$family$dev.resid <- NA
+        mod_woint$family$variance <- NA
+        mod_woint$family$dev.resids <- NA
+        mod_woint$family$aic <- NA
+        mod_woint$family$validmu <- NA
+        mod_woint$family$valideta <- NA
+
+        mod_woint$R <- NA
+        mod_woint$family$initialize <- NA
+        mod_woint$deviance <- NA
+        mod_woint$null.deviance <- NA
+        mod_woint$iter <- NA
+        mod_woint$df.residual <- NA
+        mod_woint$df.null <- NA
+        mod_woint$call <- NA
+
+        attr(mod_woint$terms, ".Environment") <- NULL
+
+        mod_summary$terms <- NA
+
+        saveRDS(mod_woint, paste("gen",YEAR,"_analysis",yr,"_",i,"e2pr_models_woint.rds",sep=""))
+        saveRDS(mod_woint_summary,
+                paste("gen",YEAR,"_analysis",yr,"_",i,"e2pr_models_woint_summary.rds",sep=""))
+        
+        send_object(paste("gen",YEAR,"_analysis",yr,"_",i,"e2pr_models_woint.rds",sep=""),
+                    "demographics_project_models",
+                    paste("gen",YEAR,"_analysis",yr,"_",i,"e2pr_models_woint.rds",sep=""))
+        send_object(paste("gen",YEAR,"_analysis",yr,"_",i,"e2pr_models_woint_summary.rds",sep=""),
+                    "demographics_project_models",
+                    paste("gen",YEAR,"_analysis",yr,"_",i,"e2pr_models_woint_summary.rds",sep=""))
+         unlink(paste("gen",YEAR,"_analysis",yr,"_",i,"e2pr_models_woint.rds",sep=""))
+         unlink(paste("gen",YEAR,"_analysis",yr,"_",i,"e2pr_models_woint_summary.rds",sep=""))
+```
